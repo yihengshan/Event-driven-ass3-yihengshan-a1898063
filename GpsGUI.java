@@ -1,6 +1,13 @@
-import javax.swing.*;
-import java.awt.*;
-import nz.sodium.*;
+import java.awt.BorderLayout;
+import java.awt.Font;
+import java.awt.GridLayout;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
+import nz.sodium.Listener;
+import nz.sodium.Stream;
 
 public class GpsGUI {
 
@@ -47,22 +54,29 @@ public class GpsGUI {
             // Store listeners
             Listener[] listeners = new Listener[streams.length];
 
-            // Listen to GPS events
+            // Process GPS events
             for (int i = 0; i < streams.length && i < 10; i++) {
                 final int index = i;
 
-                listeners[i] = streams[i].listen(event -> {
+                // Remove altitude using Sodium map()
+                Stream<String> simplifiedStream =
+                    streams[i].map(event ->
+                        "Tracker" + (index + 1)
+                        + " | Latitude: " + event.latitude
+                        + " | Longitude: " + event.longitude
+                    );
+
+                // Listen to simplified GPS events
+                listeners[i] = simplifiedStream.listen(data -> {
                     SwingUtilities.invokeLater(() -> {
-                        trackerLabels[index].setText(
-                            "Tracker" + (index + 1)
-                            + " | Latitude: " + event.latitude
-                            + " | Longitude: " + event.longitude
-                            + " | Altitude: " + event.altitude
-                        );
+                        trackerLabels[index].setText(data);
                     });
                 });
             }
         });
     }
 }
+
+
+
 
