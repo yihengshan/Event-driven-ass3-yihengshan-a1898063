@@ -1,3 +1,4 @@
+
 import java.awt.BorderLayout;
 import java.awt.Font;
 import java.awt.GridLayout;
@@ -72,12 +73,14 @@ public class GpsGUI {
             GpsService service = new GpsService();
             Stream<GpsEvent>[] streams = service.getEventStreams();
 
-            Listener[] listeners = new Listener[streams.length];
+            // Keep the listeners active
+            Listener[] listeners = new Listener[streams.length + 1];
 
+            // Process each tracker separately
             for (int i = 0; i < streams.length && i < 10; i++) {
                 final int index = i;
 
-                // Simplified stream without altitude
+                // Remove altitude using Sodium map()
                 Stream<String> simplifiedStream =
                     streams[i].map(event ->
                         "Tracker" + (index + 1)
@@ -85,18 +88,34 @@ public class GpsGUI {
                         + " | Longitude: " + event.longitude
                     );
 
-                // Update each tracker display
+                // Update the tracker display
                 listeners[i] = simplifiedStream.listen(data -> {
                     SwingUtilities.invokeLater(() -> {
                         trackerLabels[index].setText(data);
                     });
                 });
+            }
 
-                // Display the most recent original GPS event
-                streams[i].listen(event -> {
+            // Merge all GPS event streams
+            Stream<GpsEvent> combinedStream = streams[0];
+
+            for (int i = 1; i < streams.length; i++) {
+                combinedStream = combinedStream.orElse(streams[i]);
+            }
+
+            // Listen to the combined stream
+            listeners[streams.length] =
+                combinedStream.listen(event -> {
                     SwingUtilities.invokeLater(() -> {
+                        String trackerName = event.name;
+
+                        // Change Tracker0 to Tracker1, etc.
+                        int trackerNumber = Integer.parseInt(
+                            trackerName.replace("Tracker", "")
+                        ) + 1;
+
                         String latestEvent =
-                            "Tracker" + (index + 1)
+                            "Tracker" + trackerNumber
                             + "," + event.latitude
                             + "," + event.longitude
                             + "," + event.altitude;
@@ -107,7 +126,6 @@ public class GpsGUI {
                         clearTimer.restart();
                     });
                 });
-            }
         });
     }
 }
