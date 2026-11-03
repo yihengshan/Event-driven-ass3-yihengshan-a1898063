@@ -1,4 +1,3 @@
-
 import java.awt.BorderLayout;
 import java.awt.Font;
 import java.awt.GridLayout;
@@ -9,6 +8,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 
 import nz.sodium.Listener;
 import nz.sodium.Stream;
@@ -45,7 +45,7 @@ public class GpsGUI {
 
             frame.add(mainPanel, BorderLayout.CENTER);
 
-            // Create the most recent event display
+            // Create latest event panel
             JPanel eventPanel = new JPanel(new BorderLayout());
             eventPanel.setBorder(
                 BorderFactory.createTitledBorder(
@@ -57,8 +57,13 @@ public class GpsGUI {
                 "Waiting for GPS event..."
             );
             eventPanel.add(recentEventLabel, BorderLayout.CENTER);
-
             frame.add(eventPanel, BorderLayout.SOUTH);
+
+            // Clear latest event after 3 seconds
+            Timer clearTimer = new Timer(3000, e -> {
+                recentEventLabel.setText("");
+            });
+            clearTimer.setRepeats(false);
 
             frame.setLocationRelativeTo(null);
             frame.setVisible(true);
@@ -69,11 +74,10 @@ public class GpsGUI {
 
             Listener[] listeners = new Listener[streams.length];
 
-            // Listen to each tracker
             for (int i = 0; i < streams.length && i < 10; i++) {
                 final int index = i;
 
-                // Remove altitude from simplified GPS data
+                // Simplified stream without altitude
                 Stream<String> simplifiedStream =
                     streams[i].map(event ->
                         "Tracker" + (index + 1)
@@ -81,12 +85,26 @@ public class GpsGUI {
                         + " | Longitude: " + event.longitude
                     );
 
-                // Update tracker and latest event displays
+                // Update each tracker display
                 listeners[i] = simplifiedStream.listen(data -> {
                     SwingUtilities.invokeLater(() -> {
                         trackerLabels[index].setText(data);
+                    });
+                });
 
-                        recentEventLabel.setText(data);
+                // Display the most recent original GPS event
+                streams[i].listen(event -> {
+                    SwingUtilities.invokeLater(() -> {
+                        String latestEvent =
+                            "Tracker" + (index + 1)
+                            + "," + event.latitude
+                            + "," + event.longitude
+                            + "," + event.altitude;
+
+                        recentEventLabel.setText(latestEvent);
+
+                        // Restart the 3-second timer
+                        clearTimer.restart();
                     });
                 });
             }
