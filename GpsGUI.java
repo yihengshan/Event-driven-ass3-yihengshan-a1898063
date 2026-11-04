@@ -24,7 +24,7 @@ public class GpsGUI {
     private static Listener[] listeners;
     private static GpsService service;
 
-    // Stores the current filter limits
+    // Stores the current GPS filter settings
     private static class FilterSettings {
         final double latitude;
         final double longitude;
@@ -44,7 +44,7 @@ public class GpsGUI {
         SwingUtilities.invokeLater(() -> {
             JFrame frame = new JFrame("GPS Tracking System");
 
-            frame.setSize(900, 750);
+            frame.setSize(1000, 850);
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
             frame.setLayout(new BorderLayout());
 
@@ -61,6 +61,12 @@ public class GpsGUI {
                 new GridLayout(10, 1)
             );
 
+            trackerPanel.setBorder(
+                BorderFactory.createTitledBorder(
+                    "GPS Tracker Coordinates"
+                )
+            );
+
             JLabel[] trackerLabels = new JLabel[10];
 
             for (int i = 0; i < 10; i++) {
@@ -71,12 +77,41 @@ public class GpsGUI {
                 trackerPanel.add(trackerLabels[i]);
             }
 
-            frame.add(trackerPanel, BorderLayout.CENTER);
+            // Create distance display panel
+            JPanel distancePanel = new JPanel(
+                new GridLayout(5, 2, 10, 5)
+            );
+
+            distancePanel.setBorder(
+                BorderFactory.createTitledBorder(
+                    "Distance Travelled - Last 5 Minutes"
+                )
+            );
+
+            // Store distance labels for ten trackers
+            JLabel[] distanceLabels = new JLabel[10];
+
+            for (int i = 0; i < 10; i++) {
+                distanceLabels[i] = new JLabel(
+                    "Tracker" + (i + 1) + ": 0 m"
+                );
+
+                distancePanel.add(distanceLabels[i]);
+            }
+
+            // Group tracker and distance panels
+            JPanel mainPanel = new JPanel(new BorderLayout());
+
+            mainPanel.add(trackerPanel, BorderLayout.CENTER);
+            mainPanel.add(distancePanel, BorderLayout.SOUTH);
+
+            frame.add(mainPanel, BorderLayout.CENTER);
 
             // Create filter control panel
             JPanel filterPanel = new JPanel(
                 new GridLayout(3, 2, 10, 10)
             );
+
             filterPanel.setBorder(
                 BorderFactory.createTitledBorder(
                     "GPS Filter Control"
@@ -89,14 +124,18 @@ public class GpsGUI {
 
             filterPanel.add(new JLabel("Minimum Latitude:"));
             filterPanel.add(latitudeField);
+
             filterPanel.add(new JLabel("Minimum Longitude:"));
             filterPanel.add(longitudeField);
+
             filterPanel.add(setFilterButton);
             filterPanel.add(new JLabel(""));
 
+            // Display current filter settings
             JLabel currentLatitudeLabel = new JLabel(
                 "Current Minimum Latitude: -90.0"
             );
+
             JLabel currentLongitudeLabel = new JLabel(
                 "Current Minimum Longitude: -180.0"
             );
@@ -104,11 +143,13 @@ public class GpsGUI {
             JPanel currentFilterPanel = new JPanel(
                 new GridLayout(2, 1)
             );
+
             currentFilterPanel.add(currentLatitudeLabel);
             currentFilterPanel.add(currentLongitudeLabel);
 
-            // Create the filtered event display
+            // Create filtered event display
             JPanel eventPanel = new JPanel(new BorderLayout());
+
             eventPanel.setBorder(
                 BorderFactory.createTitledBorder(
                     "Most Recent Filtered GPS Event"
@@ -118,10 +159,12 @@ public class GpsGUI {
             JLabel recentEventLabel = new JLabel(
                 "Waiting for GPS event..."
             );
+
             eventPanel.add(recentEventLabel, BorderLayout.CENTER);
 
-            // Group the bottom panels
+            // Group bottom panels
             JPanel bottomPanel = new JPanel();
+
             bottomPanel.setLayout(
                 new BoxLayout(bottomPanel, BoxLayout.Y_AXIS)
             );
@@ -132,19 +175,20 @@ public class GpsGUI {
 
             frame.add(bottomPanel, BorderLayout.SOUTH);
 
-            // Clear the event after 3 seconds
+            // Clear latest event after 3 seconds
             Timer clearTimer = new Timer(3000, e -> {
                 recentEventLabel.setText("");
             });
+
             clearTimer.setRepeats(false);
 
-            // Store current filter settings in Sodium
+            // Store filter limits using Sodium CellSink
             CellSink<FilterSettings> filterSettings =
                 new CellSink<>(
                     new FilterSettings(-90.0, -180.0)
                 );
 
-            // Update filter settings when button is clicked
+            // Handle filter button
             setFilterButton.addActionListener(e -> {
                 try {
                     double latitude = Double.parseDouble(
@@ -155,9 +199,11 @@ public class GpsGUI {
                         longitudeField.getText().trim()
                     );
 
+                    // Validate coordinates
                     if (!Double.isFinite(latitude)
                             || !Double.isFinite(longitude)
-                            || latitude < -90 || latitude > 90
+                            || latitude < -90
+                            || latitude > 90
                             || longitude < -180
                             || longitude > 180) {
                         throw new NumberFormatException();
@@ -166,16 +212,19 @@ public class GpsGUI {
                     FilterSettings newSettings =
                         new FilterSettings(latitude, longitude);
 
+                    // Update Sodium filter settings
                     filterSettings.send(newSettings);
 
+                    // Update current filter labels
                     currentLatitudeLabel.setText(
                         "Current Minimum Latitude: " + latitude
                     );
+
                     currentLongitudeLabel.setText(
                         "Current Minimum Longitude: " + longitude
                     );
 
-                    // Remove the previously displayed event
+                    // Clear previously displayed event
                     clearTimer.stop();
                     recentEventLabel.setText("");
 
@@ -193,18 +242,22 @@ public class GpsGUI {
 
             // Start GPS service
             service = new GpsService();
+
+            // Get GPS event streams
             Stream<GpsEvent>[] streams =
                 service.getEventStreams();
 
+            // Keep listeners active
             listeners = new Listener[streams.length + 1];
 
-            // Simplified display for each tracker
+            // Process each tracker separately
             for (int i = 0;
                     i < streams.length && i < 10;
                     i++) {
 
                 final int index = i;
 
+                // Remove altitude using Sodium map()
                 Stream<String> simplifiedStream =
                     streams[i].map(event ->
                         "Tracker" + (index + 1)
@@ -212,6 +265,7 @@ public class GpsGUI {
                             + " | Longitude: " + event.longitude
                     );
 
+                // Update individual tracker display
                 listeners[i] = simplifiedStream.listen(data -> {
                     SwingUtilities.invokeLater(() -> {
                         trackerLabels[index].setText(data);
@@ -219,8 +273,9 @@ public class GpsGUI {
                 });
             }
 
-            // Combine GPS streams
+            // Combine all GPS event streams
             if (streams.length > 0) {
+
                 Stream<GpsEvent> combinedStream = streams[0];
 
                 for (int i = 1; i < streams.length; i++) {
@@ -228,7 +283,7 @@ public class GpsGUI {
                         combinedStream.orElse(streams[i]);
                 }
 
-                // Attach current settings to each GPS event
+                // Check GPS events against filter settings
                 Stream<Optional<GpsEvent>> checkedStream =
                     combinedStream.snapshot(
                         filterSettings,
@@ -244,10 +299,12 @@ public class GpsGUI {
                         .filter(result -> result.isPresent())
                         .map(result -> result.get());
 
-                // Display only filtered GPS events
+                // Display filtered GPS events
                 listeners[streams.length] =
                     filteredStream.listen(event -> {
                         SwingUtilities.invokeLater(() -> {
+
+                            // Convert tracker number for GUI
                             int trackerNumber =
                                 Integer.parseInt(
                                     event.name.replace(
@@ -262,6 +319,8 @@ public class GpsGUI {
                                     + "," + event.altitude;
 
                             recentEventLabel.setText(latestEvent);
+
+                            // Restart the 3-second timer
                             clearTimer.restart();
                         });
                     });
