@@ -24,7 +24,27 @@ public class GpsGUI {
     private static Listener[] listeners;
     private static GpsService service;
 
-    // Stores the current GPS filter settings
+    // Store GPS data with altitude in meters
+    private static class MetricGpsEvent {
+        final String name;
+        final double latitude;
+        final double longitude;
+        final double altitudeMeters;
+
+        MetricGpsEvent(
+                String name,
+                double latitude,
+                double longitude,
+                double altitudeMeters) {
+
+            this.name = name;
+            this.latitude = latitude;
+            this.longitude = longitude;
+            this.altitudeMeters = altitudeMeters;
+        }
+    }
+
+    // Store the current GPS filter settings
     private static class FilterSettings {
         final double latitude;
         final double longitude;
@@ -44,7 +64,7 @@ public class GpsGUI {
         SwingUtilities.invokeLater(() -> {
             JFrame frame = new JFrame("GPS Tracking System");
 
-            frame.setSize(1000, 850);
+            frame.setSize(1000, 900);
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
             frame.setLayout(new BorderLayout());
 
@@ -88,7 +108,6 @@ public class GpsGUI {
                 )
             );
 
-            // Store distance labels for ten trackers
             JLabel[] distanceLabels = new JLabel[10];
 
             for (int i = 0; i < 10; i++) {
@@ -99,7 +118,7 @@ public class GpsGUI {
                 distancePanel.add(distanceLabels[i]);
             }
 
-            // Group tracker and distance panels
+            // Group tracker and distance displays
             JPanel mainPanel = new JPanel(new BorderLayout());
 
             mainPanel.add(trackerPanel, BorderLayout.CENTER);
@@ -162,6 +181,26 @@ public class GpsGUI {
 
             eventPanel.add(recentEventLabel, BorderLayout.CENTER);
 
+            // Create converted altitude display
+            JPanel altitudePanel = new JPanel(
+                new BorderLayout()
+            );
+
+            altitudePanel.setBorder(
+                BorderFactory.createTitledBorder(
+                    "Converted Altitude"
+                )
+            );
+
+            JLabel altitudeLabel = new JLabel(
+                "Waiting for altitude data..."
+            );
+
+            altitudePanel.add(
+                altitudeLabel,
+                BorderLayout.CENTER
+            );
+
             // Group bottom panels
             JPanel bottomPanel = new JPanel();
 
@@ -172,17 +211,18 @@ public class GpsGUI {
             bottomPanel.add(filterPanel);
             bottomPanel.add(currentFilterPanel);
             bottomPanel.add(eventPanel);
+            bottomPanel.add(altitudePanel);
 
             frame.add(bottomPanel, BorderLayout.SOUTH);
 
-            // Clear latest event after 3 seconds
+            // Clear latest GPS event after 3 seconds
             Timer clearTimer = new Timer(3000, e -> {
                 recentEventLabel.setText("");
             });
 
             clearTimer.setRepeats(false);
 
-            // Store filter limits using Sodium CellSink
+            // Store filter settings with Sodium CellSink
             CellSink<FilterSettings> filterSettings =
                 new CellSink<>(
                     new FilterSettings(-90.0, -180.0)
@@ -199,7 +239,7 @@ public class GpsGUI {
                         longitudeField.getText().trim()
                     );
 
-                    // Validate coordinates
+                    // Validate latitude and longitude
                     if (!Double.isFinite(latitude)
                             || !Double.isFinite(longitude)
                             || latitude < -90
@@ -215,7 +255,7 @@ public class GpsGUI {
                     // Update Sodium filter settings
                     filterSettings.send(newSettings);
 
-                    // Update current filter labels
+                    // Update filter labels
                     currentLatitudeLabel.setText(
                         "Current Minimum Latitude: " + latitude
                     );
@@ -224,9 +264,12 @@ public class GpsGUI {
                         "Current Minimum Longitude: " + longitude
                     );
 
-                    // Clear previously displayed event
+                    // Clear previous event
                     clearTimer.stop();
                     recentEventLabel.setText("");
+                    altitudeLabel.setText(
+                        "Waiting for altitude data..."
+                    );
 
                 } catch (NumberFormatException ex) {
                     JOptionPane.showMessageDialog(
@@ -248,9 +291,9 @@ public class GpsGUI {
                 service.getEventStreams();
 
             // Keep listeners active
-            listeners = new Listener[streams.length + 1];
+            listeners = new Listener[streams.length + 2];
 
-            // Process each tracker separately
+            // Process individual tracker streams
             for (int i = 0;
                     i < streams.length && i < 10;
                     i++) {
@@ -265,7 +308,7 @@ public class GpsGUI {
                             + " | Longitude: " + event.longitude
                     );
 
-                // Update individual tracker display
+                // Update tracker labels
                 listeners[i] = simplifiedStream.listen(data -> {
                     SwingUtilities.invokeLater(() -> {
                         trackerLabels[index].setText(data);
@@ -283,7 +326,7 @@ public class GpsGUI {
                         combinedStream.orElse(streams[i]);
                 }
 
-                // Check GPS events against filter settings
+                // Apply current filter settings
                 Stream<Optional<GpsEvent>> checkedStream =
                     combinedStream.snapshot(
                         filterSettings,
@@ -293,18 +336,27 @@ public class GpsGUI {
                                 : Optional.empty()
                     );
 
-                // Remove events outside the permitted range
+                // Remove events outside the filter range
                 Stream<GpsEvent> filteredStream =
                     checkedStream
                         .filter(result -> result.isPresent())
                         .map(result -> result.get());
 
-                // Display filtered GPS events
+                // Convert altitude from feet to meters
+                Stream<MetricGpsEvent> metricStream =
+                    filteredStream.map(event ->
+                        new MetricGpsEvent(
+                            event.name,
+                            event.latitude,
+                            event.longitude,
+                            event.altitude * 0.3048
+                        )
+                    );
+
+                // Display most recent filtered event
                 listeners[streams.length] =
                     filteredStream.listen(event -> {
                         SwingUtilities.invokeLater(() -> {
-
-                            // Convert tracker number for GUI
                             int trackerNumber =
                                 Integer.parseInt(
                                     event.name.replace(
@@ -322,6 +374,28 @@ public class GpsGUI {
 
                             // Restart the 3-second timer
                             clearTimer.restart();
+                        });
+                    });
+
+                // Display converted altitude in meters
+                listeners[streams.length + 1] =
+                    metricStream.listen(event -> {
+                        SwingUtilities.invokeLater(() -> {
+                            int trackerNumber =
+                                Integer.parseInt(
+                                    event.name.replace(
+                                        "Tracker", ""
+                                    )
+                                ) + 1;
+
+                            altitudeLabel.setText(
+                                "Tracker" + trackerNumber
+                                    + " | Altitude: "
+                                    + String.format(
+                                        "%.2f m",
+                                        event.altitudeMeters
+                                    )
+                            );
                         });
                     });
             }
